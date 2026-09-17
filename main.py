@@ -1,67 +1,77 @@
 import os
 import sqlite3
-import threading
+from threading import Thread
 from flask import Flask
 from telebot import TeleBot
 
-# تنظیم وب‌سرویس کوچک برای رایگان ماندن در Render
+# ----------------- وب‌سرویس برای Render -----------------
 app = Flask(__name__)
 
 
 @app.route("/")
 def home():
-    return "Bot is alive!"
+    return "Bot is active!"
 
 
-def run_flask():
-    port = int(os.environ.get("PORT", 8080))
+def run_web_server():
+    port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
 
 
-# توکن ربات
-BOT_TOKEN = "8989339741:AAFy6Oi7mrSviQrfZGumbXonjUbVAcevZ14"
+# ----------------- ربات تلگرام -----------------
+BOT_TOKEN = "8989339741:AAFy60i7mrSviQrfZGumbXonjUbVAcevZ14"
 bot = TeleBot(BOT_TOKEN)
 
-# دیتابیس
-conn = sqlite3.connect("badwords.db", check_same_thread=False)
-cursor = conn.cursor()
-cursor.execute(
-    "CREATE TABLE IF NOT EXISTS words (word TEXT UNIQUE)"
-)
-conn.commit()
+
+# ----------------- دیتابیس -----------------
+def get_db():
+    return sqlite3.connect("badwords.db")
+
+
+def init_db():
+    with get_db() as conn:
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS words (word TEXT UNIQUE)"
+        )
+
+
+init_db()
 
 
 def get_words():
-    cursor.execute("SELECT word FROM words")
-    return [row[0] for row in cursor.fetchall()]
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT word FROM words")
+        return [row[0] for row in cursor.fetchall()]
 
 
 def add_word(word):
     try:
-        cursor.execute(
-            "INSERT INTO words (word) VALUES (?)", (word.lower(),)
-        )
-        conn.commit()
+        with get_db() as conn:
+            conn.execute(
+                "INSERT INTO words (word) VALUES (?)", (word.lower(),)
+            )
         return True
     except:
         return False
 
 
 def remove_word(word):
-    cursor.execute("DELETE FROM words WHERE word = ?", (word.lower(),))
-    conn.commit()
-    return cursor.rowcount > 0
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM words WHERE word = ?", (word.lower(),))
+        return cursor.rowcount > 0
 
 
-# دستورات
+# ----------------- دستورات ربات -----------------
 @bot.message_handler(commands=["start", "help"])
 def send_welcome(message):
     help_text = (
         "سلام! 👋\n"
-        "ربات مدیریت گروه فعال است.\n\n"
-        "• افزودن کلمه: `افزودن کلمه` (مثال: `افزودن فحش1`)\n"
-        "• حذف کلمه: `حذف کلمه`\n"
-        "• مشاهده لیست: `لیست کلمات`"
+        "ربات مدیریت گروه ۲۴ ساعته فعال است.\n\n"
+        "• برای افزودن کلمه: `افزودن کلمه` (مثال: `افزودن فحش1`)\n"
+        "• برای حذف کلمه: `حذف کلمه`\n"
+        "• برای مشاهده لیست: `لیست کلمات`"
     )
     bot.reply_to(message, help_text, parse_mode="Markdown")
 
@@ -76,7 +86,7 @@ def handle_add_word(message):
             message, f"✅ کلمه «{word}» به لیست کلمات غیرمجاز اضافه شد."
         )
     else:
-        bot.reply_to(message, "⚠️ کلمه تکراری است یا نامعتبر.")
+        bot.reply_to(message, "⚠️ این کلمه از قبل وجود دارد یا نامعتبر است.")
 
 
 @bot.message_handler(func=lambda m: m.text and m.text.startswith("حذف "))
@@ -87,7 +97,7 @@ def handle_remove_word(message):
             message, f"🗑 کلمه «{word}» از لیست کلمات غیرمجاز حذف شد."
         )
     else:
-        bot.reply_to(message, "⚠️ کلمه یافت نشد.")
+        bot.reply_to(message, "⚠️ این کلمه در لیست یافت نشد.")
 
 
 @bot.message_handler(
@@ -101,7 +111,7 @@ def handle_list_words(message):
         )
         bot.reply_to(message, text, parse_mode="Markdown")
     else:
-        bot.reply_to(message, "📜 لیست خالی است.")
+        bot.reply_to(message, "📜 لیست کلمات غیرمجاز خالی است.")
 
 
 @bot.message_handler(
@@ -116,11 +126,14 @@ def check_and_delete_messages(message):
         try:
             bot.delete_message(message.chat.id, message.message_id)
         except Exception as e:
-            print(f"خطا در حذف: {e}")
+            print(f"خطا در حذف پیام: {e}")
 
 
-# اجرای هم‌زمان وب‌سرویس و ربات
+# ----------------- اجرای برنامه -----------------
 if __name__ == "__main__":
-    threading.Thread(target=run_flask).start()
-    bot.infinity_polling()
-        
+    server_thread = Thread(target=run_web_server)
+    server_thread.daemon = True
+    server_thread.start()
+
+    bot.infinity_polling(timeout=10, long_polling_timeout=5)
+    
