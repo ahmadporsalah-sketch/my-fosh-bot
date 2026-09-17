@@ -19,7 +19,7 @@ def run_web_server():
 
 
 # ----------------- ربات تلگرام -----------------
-BOT_TOKEN = "8989339741:AAFy60i7mrSviQrfZGumbXonjUbVAcevZ14"
+BOT_TOKEN = "8883021386:AAFTu3UkVyptVqV4PTsiNhnB02FYdV_lD4M"
 bot = TeleBot(BOT_TOKEN)
 
 
