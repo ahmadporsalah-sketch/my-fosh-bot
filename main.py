@@ -19,7 +19,7 @@ def run_flask():
 
 
 # توکن ربات
-BOT_TOKEN = "8989339741:AAFy60i7mrSviQrfZGumbXonjUbVAcevZ14T_TOKEN"
+BOT_TOKEN = "8989339741:AAFy6Oi7mrSviQrfZGumbXonjUbVAcevZ14"
 bot = TeleBot(BOT_TOKEN)
 
 # دیتابیس
