@@ -21,8 +21,8 @@ logging.basicConfig(level=logging.INFO)
 # ------------------------------------
 # تنظیمات اولیه
 # ------------------------------------
-API_ID = 20473518
-API_HASH = "d2832a6a81a16a8a4e96807c50b380c8"
+API_ID = 21459601
+API_HASH = "0422cec0f599d9bc434d13dacbedea93"
 BOT_TOKEN = "8301053372:AAHtczCUDA0iDJ8iEZd3ioW9N6ISp61uUow"
 ADMIN_ID = 6326413651
 
