@@ -1,5 +1,2 @@
-pyTelegramBotAPI
-pyTelegramBotAPI
-flask
-
-
+pyrogram
+tgcrypto

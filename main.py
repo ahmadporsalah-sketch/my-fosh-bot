@@ -1,139 +1,267 @@
-import os
-import sqlite3
-from threading import Thread
-from flask import Flask
-from telebot import TeleBot
+import asyncio
+import logging
+import random
+from pyrogram import Client, filters
+from pyrogram.types import (
+    CallbackQuery,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Message,
+)
 
-# ----------------- وب‌سرویس برای Render -----------------
-app = Flask(__name__)
+logging.basicConfig(level=logging.INFO)
 
+# ------------------------------------
+# تنظیمات اولیه
+# ------------------------------------
+API_ID = 20473518
+API_HASH = "d2832a6a81a16a8a4e96807c50b380c8"
+BOT_TOKEN = "8301053372:AAHtczCUDA0iDJ8iEZd3ioW9N6ISp61uUow"
+ADMIN_ID = 5579683966
 
-@app.route("/")
-def home():
-    return "Bot is active!"
+# ساخت کلاینت‌ها بدون جاگذاری مستقیم توکن
+userbot = Client("my_userbot", api_id=API_ID, api_hash=API_HASH)
+bot = Client("management_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-
-def run_web_server():
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
-
-
-# ----------------- ربات تلگرام -----------------
-BOT_TOKEN = "8883021386:AAFTu3UkVyptVqV4PTsiNhnB02FYdV_lD4M"
-bot = TeleBot(BOT_TOKEN)
-
-
-# ----------------- دیتابیس -----------------
-def get_db():
-    return sqlite3.connect("badwords.db")
-
-
-def init_db():
-    with get_db() as conn:
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS words (word TEXT UNIQUE)"
-        )
-
-
-init_db()
+config = {
+    "groups": [],
+    "text": "بنر پیش‌فرض",
+    "media_type": None,
+    "media_file_id": None,
+    "media_caption": "",
+    "delay": 10,  # زمان پایه (ثانیه)
+    "running": False,
+    "state": None,
+}
 
 
-def get_words():
-    with get_db() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT word FROM words")
-        return [row[0] for row in cursor.fetchall()]
-
-
-def add_word(word):
-    try:
-        with get_db() as conn:
-            conn.execute(
-                "INSERT INTO words (word) VALUES (?)", (word.lower(),)
+def get_main_markup():
+    status = "🟢 روشن" if config["running"] else "🔴 خاموش"
+    keyboard = [
+        [
+            InlineKeyboardButton("➕ افزودن گروه", callback_data="add_group"),
+            InlineKeyboardButton(
+                "🗑️ پاک‌سازی گروه‌ها", callback_data="clear_groups"
+            ),
+        ],
+        [
+            InlineKeyboardButton("📝 بنر متنی", callback_data="set_text"),
+            InlineKeyboardButton("🖼️ بنر رسانه‌ای", callback_data="set_media"),
+        ],
+        [
+            InlineKeyboardButton(
+                "⏱️ تنظیم زمان پایه", callback_data="set_delay"
             )
-        return True
-    except:
-        return False
+        ],
+        [InlineKeyboardButton(f"حالت ارسال: {status}", callback_data="toggle")],
+        [
+            InlineKeyboardButton(
+                "📊 وضعیت و لیست گروه‌ها", callback_data="status"
+            )
+        ],
+    ]
+    return InlineKeyboardMarkup(keyboard)
 
 
-def remove_word(word):
-    with get_db() as conn:
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM words WHERE word = ?", (word.lower(),))
-        return cursor.rowcount > 0
-
-
-# ----------------- دستورات ربات -----------------
-@bot.message_handler(commands=["start", "help"])
-def send_welcome(message):
-    help_text = (
-        "سلام! 👋\n"
-        "ربات مدیریت گروه ۲۴ ساعته فعال است.\n\n"
-        "• برای افزودن کلمه: `افزودن کلمه` (مثال: `افزودن فحش1`)\n"
-        "• برای حذف کلمه: `حذف کلمه`\n"
-        "• برای مشاهده لیست: `لیست کلمات`"
+# ------------------------------------
+# هندلرهای ربات مدیریتی
+# ------------------------------------
+@bot.on_message(filters.user(ADMIN_ID) & filters.command("start"))
+async def start_cmd(client: Client, message: Message):
+    config["state"] = None
+    await message.reply_text(
+        "👋 پنل مدیریت ارسال چندگانه بنر:", reply_markup=get_main_markup()
     )
-    bot.reply_to(message, help_text, parse_mode="Markdown")
 
 
-@bot.message_handler(
-    func=lambda m: m.text and m.text.startswith("افزودن ")
-)
-def handle_add_word(message):
-    word = message.text.replace("افزودن ", "").strip()
-    if word and add_word(word):
-        bot.reply_to(
-            message, f"✅ کلمه «{word}» به لیست کلمات غیرمجاز اضافه شد."
+@bot.on_callback_query(filters.user(ADMIN_ID))
+async def callback_handler(client: Client, query: CallbackQuery):
+    data = query.data
+    await query.answer()
+
+    if data == "add_group":
+        config["state"] = "await_group"
+        await query.edit_message_text(
+            "لطفاً آیدی یا لینک گروه جدید را ارسال کنید (مثلاً group@):"
         )
-    else:
-        bot.reply_to(message, "⚠️ این کلمه از قبل وجود دارد یا نامعتبر است.")
 
-
-@bot.message_handler(func=lambda m: m.text and m.text.startswith("حذف "))
-def handle_remove_word(message):
-    word = message.text.replace("حذف ", "").strip()
-    if word and remove_word(word):
-        bot.reply_to(
-            message, f"🗑 کلمه «{word}» از لیست کلمات غیرمجاز حذف شد."
+    elif data == "clear_groups":
+        config["groups"].clear()
+        await query.edit_message_text(
+            "🗑️ تمام گروه‌ها از لیست حذف شدند.", reply_markup=get_main_markup()
         )
-    else:
-        bot.reply_to(message, "⚠️ این کلمه در لیست یافت نشد.")
 
-
-@bot.message_handler(
-    func=lambda m: m.text and m.text in ["لیست کلمات", "لیست"]
-)
-def handle_list_words(message):
-    words = get_words()
-    if words:
-        text = "📋 **لیست کلمات غیرمجاز:**\n\n" + "\n".join(
-            [f"• {w}" for w in words]
+    elif data == "set_delay":
+        config["state"] = "await_delay"
+        await query.edit_message_text(
+            "لطفاً حداقل زمان پایه را به ثانیه وارد کنید (مثلاً 10):\n"
+            "نکته: سیستم تا ۱۰ ثانیه اضافه تر به صورت رندوم صبر خواهد کرد."
         )
-        bot.reply_to(message, text, parse_mode="Markdown")
-    else:
-        bot.reply_to(message, "📜 لیست کلمات غیرمجاز خالی است.")
+
+    elif data == "set_text":
+        config["state"] = "await_text"
+        await query.edit_message_text("لطفاً متن جدید بنر را بفرستید:")
+
+    elif data == "set_media":
+        config["state"] = "await_media"
+        await query.edit_message_text(
+            "لطفاً عکس یا ویدیو بنر را همراه با زیرنویس ارسال کنید:"
+        )
+
+    elif data == "toggle":
+        if not config["groups"]:
+            await query.edit_message_text(
+                "❌ حداقل باید یک گروه اضافه کرده باشید!",
+                reply_markup=get_main_markup(),
+            )
+            return
+
+        config["running"] = not config["running"]
+        if config["running"]:
+            asyncio.create_task(send_worker())
+            await query.edit_message_text(
+                "▶️ ارسال مداوم با زمان‌بندی تصادفی شروع شد!",
+                reply_markup=get_main_markup(),
+            )
+        else:
+            await query.edit_message_text(
+                "⏹️ ارسال بنر متوقف شد.", reply_markup=get_main_markup()
+            )
+
+    elif data == "status":
+        groups_list = (
+            "\n".join([f"• `{g}`" for g in config["groups"]])
+            if config["groups"]
+            else "هیچ گروهی ثبت نشده"
+        )
+        msg = (
+            f"📌 **وضعیت سیستم:**\n\n"
+            f"👥 **تعداد گروه‌ها:** {len(config['groups'])}\n"
+            f"📜 **لیست گروه‌ها:**\n{groups_list}\n\n"
+            f"⏱️ **زمان پایه:** {config['delay']} ثانیه (با بازه تصادفی)\n"
+            f"⚙️ **حالت:** {'در حال ارسال...' if config['running'] else 'متوقف'}"
+        )
+        await query.edit_message_text(msg, reply_markup=get_main_markup())
 
 
-@bot.message_handler(
-    func=lambda message: message.chat.type in ["group", "supergroup"]
-)
-def check_and_delete_messages(message):
-    if not message.text:
-        return
-    text = message.text.lower()
-    forbidden_words = get_words()
-    if any(word in text for word in forbidden_words if word):
-        try:
-            bot.delete_message(message.chat.id, message.message_id)
-        except Exception as e:
-            print(f"خطا در حذف پیام: {e}")
+@bot.on_message(filters.user(ADMIN_ID) & ~filters.command("start"))
+async def input_handler(client: Client, message: Message):
+    state = config.get("state")
+
+    if state == "await_group":
+        group_input = message.text.strip()
+        if group_input not in config["groups"]:
+            config["groups"].append(group_input)
+            await message.reply_text(
+                f"✅ گروه `{group_input}` اضافه شد.",
+                reply_markup=get_main_markup(),
+            )
+        else:
+            await message.reply_text(
+                "⚠️ این گروه از قبل وجود دارد.", reply_markup=get_main_markup()
+            )
+        config["state"] = None
+
+    elif state == "await_delay":
+        if message.text.isdigit():
+            config["delay"] = int(message.text)
+            config["state"] = None
+            await message.reply_text(
+                f"✅ زمان پایه به {message.text} ثانیه تغییر یافت.",
+                reply_markup=get_main_markup(),
+            )
+        else:
+            await message.reply_text("❌ لطفاً یک عدد معتبر وارد کنید.")
+
+    elif state == "await_text":
+        config["text"] = message.text
+        config["media_file_id"] = None
+        config["state"] = None
+        await message.reply_text(
+            "✅ بنر متنی ذخیره شد.", reply_markup=get_main_markup()
+        )
+
+    elif state == "await_media":
+        if message.photo:
+            config["media_type"] = "photo"
+            config["media_file_id"] = message.photo.file_id
+        elif message.video:
+            config["media_type"] = "video"
+            config["media_file_id"] = message.video.file_id
+        elif message.document:
+            config["media_type"] = "document"
+            config["media_file_id"] = message.document.file_id
+
+        config["media_caption"] = message.caption or ""
+        config["state"] = None
+        await message.reply_text(
+            "✅ بنر رسانه‌ای ذخیره شد.", reply_markup=get_main_markup()
+        )
 
 
-# ----------------- اجرای برنامه -----------------
+# ------------------------------------
+# موتور ارسال یوزربات با زمان‌بندی رندوم
+# ------------------------------------
+async def send_worker():
+    while config["running"]:
+        for group in list(config["groups"]):
+            if not config["running"]:
+                break
+
+            try:
+                try:
+                    await userbot.join_chat(group)
+                except Exception:
+                    pass
+
+                if config["media_file_id"]:
+                    if config["media_type"] == "photo":
+                        await userbot.send_photo(
+                            chat_id=group,
+                            photo=config["media_file_id"],
+                            caption=config["media_caption"],
+                        )
+                    elif config["media_type"] == "video":
+                        await userbot.send_video(
+                            chat_id=group,
+                            video=config["media_file_id"],
+                            caption=config["media_caption"],
+                        )
+                    elif config["media_type"] == "document":
+                        await userbot.send_document(
+                            chat_id=group,
+                            document=config["media_file_id"],
+                            caption=config["media_caption"],
+                        )
+                else:
+                    await userbot.send_message(
+                        chat_id=group, text=config["text"]
+                    )
+
+            except Exception as e:
+                logging.error(f"خطا در ارسال به {group}: {e}")
+
+            # مکث رندوم بین ارسال به گروه‌ها (۲ تا ۵ ثانیه)
+            await asyncio.sleep(random.randint(2, 5))
+
+        # زمان انتظار رندوم (بین زمان پایه تا ۱۰ ثانیه بیشتر)
+        base_delay = config["delay"]
+        random_delay = random.randint(base_delay, base_delay + 10)
+        logging.info(f"زمان انتظار تا دوره بعدی: {random_delay} ثانیه")
+
+        await asyncio.sleep(random_delay)
+
+
+# ------------------------------------
+# اجرای برنامه
+# ------------------------------------
+async def main():
+    await userbot.start()
+    await bot.start()
+    print("ربات چندگانه آنلاین شد.")
+    await asyncio.Event().wait()
+
+
 if __name__ == "__main__":
-    server_thread = Thread(target=run_web_server)
-    server_thread.daemon = True
-    server_thread.start()
-
-    bot.infinity_polling(timeout=10, long_polling_timeout=5)
-    
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(main())
