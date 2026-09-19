@@ -267,7 +267,23 @@ async def main():
     await bot.start()
     print("ربات چندگانه آنلاین شد.")
     await asyncio.Event().wait()
+    
+from http.server import HTTPServer, BaseHTTPRequestHandler
+import threading
 
+class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Userbot is running!")
+
+def run_web_server():
+    server = HTTPServer(('0.0.0.0', 10000), SimpleHTTPRequestHandler)
+    server.serve_forever()
+
+# اجرا در وب‌سرور در پس‌زمینه
+threading.Thread(target=run_web_server, daemon=True).start()
+        
 
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()
