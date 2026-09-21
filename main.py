@@ -24,7 +24,7 @@ logging.basicConfig(level=logging.INFO)
 API_ID = 21459601
 API_HASH = "0422cec0f599d9bc434d13dacbedea93"
 BOT_TOKEN = "8301053372:AAHtczCUDA0iDJ8iEZd3ioW9N6ISp61uUow"
-ADMIN_ID = 6326413651
+ADMIN_ID = 5455533005
 
 # ساخت کلاینت‌ها بدون جاگذاری مستقیم توکن
 userbot = Client("my_userbot", api_id=API_ID, api_hash=API_HASH)
